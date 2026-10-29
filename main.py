@@ -11,17 +11,27 @@ from aiohttp import web
 
 TOKEN = "8921085376:AAGp6utDQjBM5ChHsGdzRccnJR_SdVNPoO8"
 ADMIN_ID = 7818671307
-CHANNEL_ID = "@AronAccount"
+CHANNEL_ID = "@AronAccount"  # Kanal username'i
 
 dp = Dispatcher()
 
 users_db = {}
-global_ad_counter = 191  # E'lonlar raqami shu yerdan boshlanadi va avtomatik oshib boradi
+global_ad_counter = 191
 
 def get_user(user_id: int):
     if user_id not in users_db:
         users_db[user_id] = {"balance": 0, "ads_count": 0, "last_ad_status": "Hali e'lon bermagansiz"}
     return users_db[user_id]
+
+# --- MAJBURITY OBUNANI TEKSHIRISH FUNKSIYASI ---
+async def check_subscription(user_id: int, bot: Bot) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        if member.status in ["member", "administrator", "creator"]:
+            return True
+    except Exception as e:
+        print(f"Obuna tekshirishda xato: {e}")
+    return False
 
 class AdStates(StatesGroup):
     waiting_for_details = State()
@@ -40,9 +50,28 @@ main_keyboard = ReplyKeyboardMarkup(
 )
 
 @dp.message(CommandStart())
-async def command_start_handler(message: Message, state: FSMContext) -> None:
+async def command_start_handler(message: Message, state: FSMContext, bot: Bot) -> None:
     await state.clear()
-    get_user(message.from_user.id)
+    user_id = message.from_user.id
+    
+    # Kanalga obunani tekshiramiz
+    is_sub = await check_subscription(user_id, bot)
+    if not is_sub:
+        sub_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📢 Kanalga a'zo bo'lish", url="https://t.me/AronAccount")],
+                [InlineKeyboardButton(text="✅ Obunani tekshirish", callback_data="check_sub")]
+            ]
+        )
+        await message.answer(
+            "⚠️ <b>Botdan foydalanish uchun rasmiy kanalimizga a'zo bo'lishingiz kerak:</b>\n\n"
+            "Kanalga a'zo bo'lib, so'ng <b>'✅ Obunani tekshirish'</b> tugmasini bosing!",
+            reply_markup=sub_kb,
+            parse_mode=ParseMode.HTML
+        )
+        return
+
+    get_user(user_id)
     text = (
         f"Salom, {html.bold(message.from_user.full_name)}! ⚡️\n\n"
         "Ushbu botga siz o'z accountingizni joylashingiz va "
@@ -57,6 +86,24 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
     
     await message.answer(text, reply_markup=main_keyboard, parse_mode=ParseMode.HTML)
     await message.answer("💡 Botdan qanday foydalanishni bilish uchun quyidagi qo'llanma kanaliga o'ting:", reply_markup=start_inline_kb)
+
+@dp.callback_query(F.data == "check_sub")
+async def check_sub_cb(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    user_id = callback.from_user.id
+    is_sub = await check_subscription(user_id, bot)
+    
+    if not is_sub:
+        await callback.answer("❌ Siz hali kanalga a'zo bo'lmadingiz!", show_alert=True)
+        return
+        
+    await callback.message.delete()
+    get_user(user_id)
+    text = (
+        f"Rahmat! A'zo bo'lganingiz tasdiqlandi. ⚡️\n\n"
+        "Kerakli tugmani tanlang 👇"
+    )
+    await callback.message.answer(text, reply_markup=main_keyboard, parse_mode=ParseMode.HTML)
+    await callback.answer()
 
 @dp.message(F.text == "🛠 Yordam")
 async def help_handler(message: Message, state: FSMContext) -> None:
@@ -313,7 +360,7 @@ async def topup_problem_cb(callback: CallbackQuery) -> None:
 @dp.callback_query(F.data == "back_home")
 async def back_home_cb(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.answer("🏠 Asosiy menyu:", reply_markup=main_keyword)
+    await callback.message.answer("🏠 Asosiy menyu:", reply_markup=main_keyboard)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("topup_"))
@@ -338,8 +385,7 @@ async def callback_topup_handler(callback: CallbackQuery, bot: Bot) -> None:
 
     await callback.answer("Bajarildi!")
 
-
-# --- RENDER UCHUN VEB-SERVER VA ISHGA TUSHIRISH ---
+# Render uchun veb-server
 async def handle(request):
     return web.Response(text="Bot is active!")
 
@@ -354,11 +400,7 @@ async def web_server():
 
 async def main() -> None:
     bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    
-    # Veb-serverni yoqamiz (Render port talab qilgani uchun)
     await web_server()
-    
-    # Botni ishga tushiramiz
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
