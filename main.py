@@ -1,3 +1,4 @@
+import os
 import asyncio
 from aiogram import Bot, Dispatcher, F, html
 from aiogram.client.default import DefaultBotProperties
@@ -6,6 +7,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+from aiohttp import web
 
 TOKEN = "8921085376:AAGp6utDQjBM5ChHsGdzRccnJR_SdVNPoO8"
 ADMIN_ID = 7818671307
@@ -180,11 +182,9 @@ async def finish_ad_posting(message: Message, state: FSMContext, bot: Bot) -> No
         await message.answer("❌ Iltimos, kamida bitta rasm yuboring!")
         return
 
-    # E'lon raqamini avtomatik shakllantirish va oshirish
     current_ad_number = global_ad_counter
     global_ad_counter += 1
 
-    # Siz so'ragan aniq shablon va emojilar
     final_caption = (
         f'<a href="https://t.me/AronAccount">ARON ACCOUNT SALE</a> 🤝\n\n'
         f"STANDOFF 2 🎮\n\n"
@@ -313,7 +313,7 @@ async def topup_problem_cb(callback: CallbackQuery) -> None:
 @dp.callback_query(F.data == "back_home")
 async def back_home_cb(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.answer("🏠 Asosiy menyu:", reply_markup=main_keyboard)
+    await callback.message.answer("🏠 Asosiy menyu:", reply_markup=main_keyword)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("topup_"))
@@ -338,8 +338,27 @@ async def callback_topup_handler(callback: CallbackQuery, bot: Bot) -> None:
 
     await callback.answer("Bajarildi!")
 
+
+# --- RENDER UCHUN VEB-SERVER VA ISHGA TUSHIRISH ---
+async def handle(request):
+    return web.Response(text="Bot is active!")
+
+async def web_server():
+    app = web.Application()
+    app.add_routes([web.get("/", handle)])
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
 async def main() -> None:
     bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    
+    # Veb-serverni yoqamiz (Render port talab qilgani uchun)
+    await web_server()
+    
+    # Botni ishga tushiramiz
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
